@@ -9,6 +9,9 @@
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- The header's weather line (config.xml weather_line): Open-Meteo over HTTPS, which needs no account
+         and no key. Nothing else in the launcher reaches the network. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Needed since Android 10 to read the Wi-Fi network name for the network pill. Never requested at
          runtime: build-and-install grants it with pm grant, so lint's Android 12 "ask for COARSE with
          FINE" rule does not apply here. -->

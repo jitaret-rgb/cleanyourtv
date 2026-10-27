@@ -158,4 +158,19 @@
     <string name="clock_format_system">System</string>
     <string name="clock_format_12">12-hour</string>
     <string name="clock_format_24">24-hour</string>
+    <!-- Weather line: "28° · Overcast", the temperature in whole degrees, then the conditions. -->
+    <string name="weather_line_format" translatable="false">%1$d° · %2$s</string>
+    <!-- Weather line (weather_line): the conditions in the weather words. -->
+    <string name="w_clear">Clear</string>
+    <string name="w_mainly_clear">Mainly clear</string>
+    <string name="w_partly_cloudy">Partly cloudy</string>
+    <string name="w_overcast">Overcast</string>
+    <string name="w_fog">Fog</string>
+    <string name="w_drizzle">Drizzle</string>
+    <string name="w_rain">Rain</string>
+    <string name="w_snow">Snow</string>
+    <string name="w_showers">Showers</string>
+    <string name="w_thunder">Thunderstorm</string>
+    <string name="w_unknown">Weather</string>
+>>>>>>> 8ba8e51c (weather line: Open-Meteo for Saraburi (local patch))
 </resources>

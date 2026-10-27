@@ -71,4 +71,19 @@
     <string name="clock_format_system">ระบบ</string>
     <string name="clock_format_12">12 ชั่วโมง</string>
     <string name="clock_format_24">24 ชั่วโมง</string>
+    <!-- Weather line: "28° · Overcast", the temperature in whole degrees, then the conditions. -->
+    <string name="weather_line_format" translatable="false">%1$d° · %2$s</string>
+    <!-- Weather line (weather_line): the conditions in the weather words. -->
+    <string name="w_clear">ท้องฟ้าแจ่มใส</string>
+    <string name="w_mainly_clear">แจ่มใส</string>
+    <string name="w_partly_cloudy">มีเมฆบางส่วน</string>
+    <string name="w_overcast">เมฆมาก</string>
+    <string name="w_fog">หมอก</string>
+    <string name="w_drizzle">ฝนปรอย</string>
+    <string name="w_rain">ฝนตก</string>
+    <string name="w_snow">หิมะ</string>
+    <string name="w_showers">ฝนตกเป็นแห่ง</string>
+    <string name="w_thunder">พายุฝนฟ้าคะนอง</string>
+    <string name="w_unknown">สภาพอากาศ</string>
+>>>>>>> 8ba8e51c (weather line: Open-Meteo for Saraburi (local patch))
 </resources>

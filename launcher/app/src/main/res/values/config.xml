@@ -534,4 +534,14 @@
     <!-- Tiles drawn from the app's icon and name instead of its banner (for banners that crop badly). -->
     <string-array name="icon_tiles" translatable="false">
     </string-array>
+
+    <!-- Weather line in the header's empty space, under the clock (false: the line is gone and nothing is
+         read). The data is Open-Meteo, which needs no account and no key; the city is a latitude/longitude
+         pair, so no location permission is asked for. Fetched off the UI thread every 30 minutes and on each
+         return to Home; offline it keeps whatever it last showed. -->
+    <bool name="weather_line">true</bool>
+    <!-- The one city the weather line follows. Latitude, longitude, then the label shown with the reading. -->
+    <string name="weather_latitude" translatable="false">14.5333</string>
+    <string name="weather_longitude" translatable="false">100.9167</string>
+    <string name="weather_city_label">Saraburi</string>
 </resources>

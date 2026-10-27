@@ -266,21 +266,21 @@
                             android:visibility="gone" />
 
                         <TextClock
-                            android:id="@+id/date"
-                            android:gravity="left"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:singleLine="@bool/date_single_line"
-                            android:maxLines="2"
-                            android:lineSpacingExtra="6dp"
-                            android:ellipsize="end"
-                            android:format12Hour="@string/date_format_home"
-                            android:format24Hour="@string/date_format_home"
-                            android:textColor="#A6FFFFFF"
-                            android:textSize="14sp"
-                            android:fontFamily="@string/font_regular"
-                            android:letterSpacing="0.14"
-                            android:textAllCaps="true" />
+                        android:id="@+id/date"
+                        android:gravity="left"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:singleLine="@bool/date_single_line"
+                        android:maxLines="2"
+                        android:lineSpacingExtra="6dp"
+                        android:ellipsize="end"
+                        android:format12Hour="@string/date_format_home"
+                        android:format24Hour="@string/date_format_home"
+                        android:textColor="#CCFFFFFF"
+                        android:textSize="22sp"
+                        android:fontFamily="@string/font_medium"
+                        android:letterSpacing="0.04"
+                        android:textAllCaps="true" />
 
                         <!-- Lunar date ("Lunar 13/9 · Year of the Horse"), shown when lunar_date is on. -->
                         <TextView
@@ -299,6 +299,25 @@
                             android:visibility="gone" />
                     </LinearLayout>
                 </LinearLayout>
+
+                <!-- Weather in the header's empty space (config.xml weather_line, off by default): the current
+                     temperature and conditions for one city, from Open-Meteo. It is a plain TextView with no
+                     focus and no click, so the grid and the dock keep every key they had. -->
+                <TextView
+                    android:id="@+id/weatherLine"
+                    android:gravity="left"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:layout_marginTop="2dp"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:textColor="#B3FFFFFF"
+                    android:textSize="15sp"
+                    android:fontFamily="@string/font_regular"
+                    android:letterSpacing="0.10"
+                    android:textAllCaps="true"
+                    android:visibility="gone" />
 
             </LinearLayout>
 

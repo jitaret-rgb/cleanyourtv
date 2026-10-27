@@ -79,6 +79,12 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import org.json.JSONObject;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -112,6 +118,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     static int COLUMNS = 4;
     private boolean rtlAppGrid;
     private static final long MINUTE_MS = 60_000L;
+    /** weather_line: how old the weather reading may be before Home asks for a new one. */
+    private static final long WEATHER_INTERVAL_MS = 30 * MINUTE_MS;
     private static final long STATS_MS = 10_000L;
     /**
      * 2025-01-01. TVs without a clock battery boot at the epoch (08:00 in China) and keep it until network
@@ -195,6 +203,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private TextView lunarDate;
     private boolean lunar;
     private int lunarOffset;
+    /** config.xml weather_line: the header's weather line; off, it is gone and nothing is read. */
+    private TextView weatherLine;
+    /** config.xml weather_latitude / weather_longitude: the one city the weather line follows. */
+    private String weatherLatitude = "", weatherLongitude = "";
+    /** When the weather line was last fetched (SystemClock uptime), 0 until the first attempt. */
+    private long lastWeatherFetch;
+    /** A fetch thread is in flight, so a storm of resumes cannot start a second one. */
+    private volatile boolean weatherFetching;
     private TextView stats;
     private List<RaceWeekend.Race> raceCalendar;
     private View racePanel;
@@ -432,6 +448,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         public void run() {
             updateGreeting();
             updatePanel();
+            updateWeather();
             // The pill follows the network callbacks and each return to Home; only the festive light follows the
             // signal level, so only it needs this minute's binder calls (about 7 ms on the UI thread).
             if (festive) updateWifiLabel();
@@ -595,6 +612,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             date.setPadding(0, (int) (4 * density), 0, 0);
         }
         vpnApp = cfg.vpnApp;
+        if (getResources().getBoolean(R.bool.weather_line)) {
+            weatherLine = findViewById(R.id.weatherLine);
+            weatherLatitude = getString(R.string.weather_latitude);
+            weatherLongitude = getString(R.string.weather_longitude);
+        }
         vpnPill = cfg.vpnPill && !cfg.topMenu;
         btnVpn = findViewById(R.id.btnVpn);
         moduleCards = cfg.moduleCards;
@@ -1109,6 +1131,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Back from an app opened from its tile, focus is still on that tile, so the cinematic "Last opened" line kept
         // the time from before this launch ("2 days ago" right after opening it). Refresh it.
         if (cinematic && heroMeta != null && lastFocused >= 0 && lastFocused < adapter.appCount()) updateHeroMeta(lastFocused);
+        updateWeather();
         // The network and Inputs pills keep their state while Home is in the background, and callbacks update them
         // when the network or the inputs change, so this refresh only catches anything missed. Its binder calls
         // (about 7 ms on a TCL C755, most of it WifiManager.getConnectionInfo) would hold up the first frame back
@@ -2706,6 +2729,78 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         } else {
             handler.postDelayed(clockCheck, 1_000L);
         }
+    }
+
+    /** The header's weather line (config.xml weather_line): the current temperature and conditions for one
+     *  city, read from Open-Meteo, which needs no account and no key. The HTTP call leaves the UI thread;
+     *  a failure keeps whatever the line already shows. At most one reading every WEATHER_INTERVAL_MS, so
+     *  a minute tick cannot start a fetch, and a fetch in flight is never doubled. */
+    private void updateWeather() {
+        if (weatherLine == null || weatherFetching) return;
+        long now = SystemClock.uptimeMillis();
+        if (lastWeatherFetch != 0 && now - lastWeatherFetch < WEATHER_INTERVAL_MS) return;
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        Network active = cm == null ? null : cm.getActiveNetwork();
+        if (active == null || cm.getNetworkCapabilities(active) == null
+                || !cm.getNetworkCapabilities(active).hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+            return;
+        }
+        lastWeatherFetch = now;
+        weatherFetching = true;
+        new Thread(() -> {
+            String text = null;
+            try {
+                String url = "https://api.open-meteo.com/v1/forecast?latitude=" + weatherLatitude
+                        + "&longitude=" + weatherLongitude
+                        + "&current=temperature_2m,weather_code&timezone=auto";
+                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                c.setConnectTimeout(8000);
+                c.setReadTimeout(8000);
+                try {
+                    StringBuilder body = new StringBuilder();
+                    try (BufferedReader in = new BufferedReader(
+                            new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = in.readLine()) != null) body.append(line);
+                    }
+                    JSONObject current = new JSONObject(body.toString()).getJSONObject("current");
+                    double temp = current.getDouble("temperature_2m");
+                    int code = current.getInt("weather_code");
+                    text = getString(R.string.weather_line_format,
+                            Math.round(temp), weatherWord(code));
+                } finally {
+                    c.disconnect();
+                }
+            } catch (Exception ignored) {
+                // Offline, an unreachable city or an API change: the line keeps what it had.
+            } finally {
+                weatherFetching = false;
+            }
+            if (text != null) {
+                final String shown = text;
+                handler.post(() -> {
+                    weatherLine.setText(shown);
+                    weatherLine.setVisibility(View.VISIBLE);
+                });
+            }
+        }, "weather-line").start();
+    }
+
+    /** A WMO weather code, which is what Open-Meteo's weather_code is, as words. */
+    private String weatherWord(int code) {
+        int res;
+        if (code == 0) res = R.string.w_clear;
+        else if (code == 1) res = R.string.w_mainly_clear;
+        else if (code == 2) res = R.string.w_partly_cloudy;
+        else if (code == 3) res = R.string.w_overcast;
+        else if (code == 45 || code == 48) res = R.string.w_fog;
+        else if (code >= 51 && code <= 57) res = R.string.w_drizzle;
+        else if (code >= 61 && code <= 67) res = R.string.w_rain;
+        else if (code >= 71 && code <= 77) res = R.string.w_snow;
+        else if (code >= 80 && code <= 82) res = R.string.w_showers;
+        else if (code >= 95) res = R.string.w_thunder;
+        else res = R.string.w_unknown;
+        return getString(res);
     }
 
     private void updateGreeting() {
