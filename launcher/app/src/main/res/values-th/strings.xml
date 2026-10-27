@@ -71,8 +71,9 @@
     <string name="clock_format_system">ระบบ</string>
     <string name="clock_format_12">12 ชั่วโมง</string>
     <string name="clock_format_24">24 ชั่วโมง</string>
-    <!-- Weather line: "28° · Overcast", the temperature in whole degrees, then the conditions. -->
-    <string name="weather_line_format" translatable="false">%1$d° · %2$s</string>
+    <!-- Weather line: "Saraburi · 28° · Overcast", %1$s is the city prefix (empty when weather_city_label is
+         empty), %2$d the temperature in whole degrees, %3$s the conditions. -->
+    <string name="weather_line_format" translatable="false">%1$s%2$d° · %3$s</string>
     <!-- Weather line (weather_line): the conditions in the weather words. -->
     <string name="w_clear">ท้องฟ้าแจ่มใส</string>
     <string name="w_mainly_clear">แจ่มใส</string>
