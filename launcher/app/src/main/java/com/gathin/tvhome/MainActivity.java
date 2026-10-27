@@ -205,8 +205,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private int lunarOffset;
     /** config.xml weather_line: the header's weather line; off, it is gone and nothing is read. */
     private TextView weatherLine;
-    /** config.xml weather_latitude / weather_longitude: the one city the weather line follows. */
-    private String weatherLatitude = "", weatherLongitude = "";
+    /** config.xml weather_latitude / weather_longitude / weather_city_label: the one city the weather line follows. */
+    private String weatherLatitude = "", weatherLongitude = "", weatherCityLabel = "";
     /** When the weather line was last fetched (SystemClock uptime), 0 until the first attempt. */
     private long lastWeatherFetch;
     /** A fetch thread is in flight, so a storm of resumes cannot start a second one. */
@@ -616,6 +616,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             weatherLine = findViewById(R.id.weatherLine);
             weatherLatitude = getString(R.string.weather_latitude);
             weatherLongitude = getString(R.string.weather_longitude);
+            weatherCityLabel = getString(R.string.weather_city_label);
         }
         vpnPill = cfg.vpnPill && !cfg.topMenu;
         btnVpn = findViewById(R.id.btnVpn);
@@ -2766,8 +2767,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     JSONObject current = new JSONObject(body.toString()).getJSONObject("current");
                     double temp = current.getDouble("temperature_2m");
                     int code = current.getInt("weather_code");
+                    // An empty weather_city_label must not leave a bare " · " in front of the temperature.
+                    String prefix = weatherCityLabel.isEmpty() ? "" : weatherCityLabel + " · ";
                     text = getString(R.string.weather_line_format,
-                            Math.round(temp), weatherWord(code));
+                            prefix, Math.round(temp), weatherWord(code));
                 } finally {
                     c.disconnect();
                 }
