@@ -1,0 +1,680 @@
+diff --git a/docs/switches.md b/docs/switches.md
+index 31cf1dc1..d434abce 100644
+--- a/docs/switches.md
++++ b/docs/switches.md
+@@ -37,6 +37,10 @@ fits the rules; keys from before the rule sit on its wanted list until a screens
+ | `wifi_status_warnings` | <img src="switches/wifi_status_warnings.jpg" width="320" alt="wifi_status_warnings on a TV"> |
+ | `top_bar_apps` | <img src="switches/top_bar_apps.jpg" width="320" alt="top_bar_apps on a TV"> |
+ | `show_greeting` | <img src="switches/show_greeting.jpg" width="320" alt="show_greeting on a TV"> |
++| `weather_line` | <img src="switches/weather_line.jpg" width="320" alt="weather_line on a TV"> |
++| `weather_latitude` | <img src="switches/weather_line.jpg" width="320" alt="weather_latitude on a TV"> |
++| `weather_longitude` | <img src="switches/weather_line.jpg" width="320" alt="weather_longitude on a TV"> |
++| `weather_city_label` | <img src="switches/weather_line.jpg" width="320" alt="weather_city_label on a TV"> |
+ | `header_white` | <img src="switches/header_white.jpg" width="320" alt="header_white on a TV"> |
+ | `clock_wallpaper` | <img src="switches/clock_wallpaper.jpg" width="320" alt="clock_wallpaper on a TV"> |
+ | `clock_wallpaper_dim` | <img src="switches/clock_wallpaper.jpg" width="320" alt="clock_wallpaper_dim on a TV"> |
+diff --git a/launcher/app/src/main/AndroidManifest.xml b/launcher/app/src/main/AndroidManifest.xml
+index b336792d..9bbae411 100644
+--- a/launcher/app/src/main/AndroidManifest.xml
++++ b/launcher/app/src/main/AndroidManifest.xml
+@@ -9,6 +9,9 @@
+ 
+     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
++    <!-- The header's weather line (config.xml weather_line): Open-Meteo over HTTPS, which needs no account
++         and no key. Nothing else in the launcher reaches the network. -->
++    <uses-permission android:name="android.permission.INTERNET" />
+     <!-- Needed since Android 10 to read the Wi-Fi network name for the network pill. Never requested at
+          runtime: build-and-install grants it with pm grant, so lint's Android 12 "ask for COARSE with
+          FINE" rule does not apply here. -->
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
+index a68495fe..77036e7d 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
+@@ -79,6 +79,12 @@ import androidx.recyclerview.widget.RecyclerView;
+ 
+ import java.io.File;
+ import java.io.IOException;
++import java.io.BufferedReader;
++import java.io.InputStreamReader;
++import java.net.HttpURLConnection;
++import java.net.URL;
++import java.nio.charset.StandardCharsets;
++import org.json.JSONObject;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.Arrays;
+@@ -110,6 +116,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     static int COLUMNS = 4;
+     private boolean rtlAppGrid;
+     private static final long MINUTE_MS = 60_000L;
++    /** weather_line: how old the weather reading may be before Home asks for a new one. */
++    private static final long WEATHER_INTERVAL_MS = 30 * MINUTE_MS;
+     private static final long STATS_MS = 10_000L;
+     /**
+      * 2025-01-01. TVs without a clock battery boot at the epoch (08:00 in China) and keep it until network
+@@ -189,6 +197,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     private TextView lunarDate;
+     private boolean lunar;
+     private int lunarOffset;
++    /** config.xml weather_line: the header's weather line; off, it is gone and nothing is read. */
++    private TextView weatherLine;
++    /** config.xml weather_latitude / weather_longitude / weather_city_label: the one city the weather line follows. */
++    private String weatherLatitude = "", weatherLongitude = "", weatherCityLabel = "";
++    /** When the weather line was last fetched (SystemClock uptime), 0 until the first attempt. */
++    private long lastWeatherFetch;
++    /** A fetch thread is in flight, so a storm of resumes cannot start a second one. */
++    private volatile boolean weatherFetching;
+     private TextView stats;
+     private List<RaceWeekend.Race> raceCalendar;
+     private View racePanel;
+@@ -412,6 +428,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         public void run() {
+             updateGreeting();
+             updatePanel();
++            updateWeather();
+             // The pill follows the network callbacks and each return to Home; only the festive light follows the
+             // signal level, so only it needs this minute's binder calls (about 7 ms on the UI thread).
+             if (festive) updateWifiLabel();
+@@ -557,6 +574,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+             date.setPadding(0, (int) (4 * density), 0, 0);
+         }
+         vpnApp = cfg.vpnApp;
++        if (getResources().getBoolean(R.bool.weather_line)) {
++            weatherLine = findViewById(R.id.weatherLine);
++            weatherLatitude = getString(R.string.weather_latitude);
++            weatherLongitude = getString(R.string.weather_longitude);
++            weatherCityLabel = getString(R.string.weather_city_label);
++        }
+         vpnPill = cfg.vpnPill && !cfg.topMenu;
+         btnVpn = findViewById(R.id.btnVpn);
+         moduleCards = cfg.moduleCards;
+@@ -1043,6 +1066,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         if (openLiveTvAfterBoot()) return;
+         updateGreeting();
+         updatePanel();
++        updateWeather();
+         // The network and Inputs pills keep their state while Home is in the background, and callbacks update them
+         // when the network or the inputs change, so this refresh only catches anything missed. Its binder calls
+         // (about 7 ms on a TCL C755, most of it WifiManager.getConnectionInfo) would hold up the first frame back
+@@ -2571,6 +2595,80 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         }
+     }
+ 
++    /** The header's weather line (config.xml weather_line): the current temperature and conditions for one
++     *  city, read from Open-Meteo, which needs no account and no key. The HTTP call leaves the UI thread;
++     *  a failure keeps whatever the line already shows. At most one reading every WEATHER_INTERVAL_MS, so
++     *  a minute tick cannot start a fetch, and a fetch in flight is never doubled. */
++    private void updateWeather() {
++        if (weatherLine == null || weatherFetching) return;
++        long now = SystemClock.uptimeMillis();
++        if (lastWeatherFetch != 0 && now - lastWeatherFetch < WEATHER_INTERVAL_MS) return;
++        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
++        Network active = cm == null ? null : cm.getActiveNetwork();
++        if (active == null || cm.getNetworkCapabilities(active) == null
++                || !cm.getNetworkCapabilities(active).hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
++            return;
++        }
++        lastWeatherFetch = now;
++        weatherFetching = true;
++        new Thread(() -> {
++            String text = null;
++            try {
++                String url = "https://api.open-meteo.com/v1/forecast?latitude=" + weatherLatitude
++                        + "&longitude=" + weatherLongitude
++                        + "&current=temperature_2m,weather_code&timezone=auto";
++                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
++                c.setConnectTimeout(8000);
++                c.setReadTimeout(8000);
++                try {
++                    StringBuilder body = new StringBuilder();
++                    try (BufferedReader in = new BufferedReader(
++                            new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
++                        String line;
++                        while ((line = in.readLine()) != null) body.append(line);
++                    }
++                    JSONObject current = new JSONObject(body.toString()).getJSONObject("current");
++                    double temp = current.getDouble("temperature_2m");
++                    int code = current.getInt("weather_code");
++                    // An empty weather_city_label must not leave a bare " · " in front of the temperature.
++                    String prefix = weatherCityLabel.isEmpty() ? "" : weatherCityLabel + " · ";
++                    text = getString(R.string.weather_line_format,
++                            prefix, Math.round(temp), weatherWord(code));
++                } finally {
++                    c.disconnect();
++                }
++            } catch (Exception ignored) {
++                // Offline, an unreachable city or an API change: the line keeps what it had.
++            } finally {
++                weatherFetching = false;
++            }
++            if (text != null) {
++                final String shown = text;
++                handler.post(() -> {
++                    weatherLine.setText(shown);
++                    weatherLine.setVisibility(View.VISIBLE);
++                });
++            }
++        }, "weather-line").start();
++    }
++
++    /** A WMO weather code, which is what Open-Meteo's weather_code is, as words. */
++    private String weatherWord(int code) {
++        int res;
++        if (code == 0) res = R.string.w_clear;
++        else if (code == 1) res = R.string.w_mainly_clear;
++        else if (code == 2) res = R.string.w_partly_cloudy;
++        else if (code == 3) res = R.string.w_overcast;
++        else if (code == 45 || code == 48) res = R.string.w_fog;
++        else if (code >= 51 && code <= 57) res = R.string.w_drizzle;
++        else if (code >= 61 && code <= 67) res = R.string.w_rain;
++        else if (code >= 71 && code <= 77) res = R.string.w_snow;
++        else if (code >= 80 && code <= 82) res = R.string.w_showers;
++        else if (code >= 95) res = R.string.w_thunder;
++        else res = R.string.w_unknown;
++        return getString(res);
++    }
++
+     private void updateGreeting() {
+         int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+         int res;
+diff --git a/launcher/app/src/main/res/layout-iw/activity_main.xml b/launcher/app/src/main/res/layout-iw/activity_main.xml
+index d1dc0fb3..d57a473c 100644
+--- a/launcher/app/src/main/res/layout-iw/activity_main.xml
++++ b/launcher/app/src/main/res/layout-iw/activity_main.xml
+@@ -312,6 +312,25 @@
+                     </LinearLayout>
+ 
+                 </LinearLayout>
++
++                <!-- Weather in the header's empty space (config.xml weather_line, off by default): the current
++                     temperature and conditions for one city, from Open-Meteo. It is a plain TextView with no
++                     focus and no click, so the grid and the dock keep every key they had. Mirrored: right. -->
++                <TextView
++                    android:id="@+id/weatherLine"
++                    android:gravity="right"
++                    android:layout_width="match_parent"
++                    android:layout_height="wrap_content"
++                    android:layout_marginEnd="4dp"
++                    android:layout_marginTop="2dp"
++                    android:singleLine="true"
++                    android:ellipsize="end"
++                    android:textColor="#B3FFFFFF"
++                    android:textSize="15sp"
++                    android:fontFamily="@string/font_regular"
++                    android:letterSpacing="0.10"
++                    android:textAllCaps="true"
++                    android:visibility="gone" />
+             </LinearLayout>
+ 
+             <!-- Shown only when show_stats is on. Outside leftBlock, so the top buttons stay level with the clock
+diff --git a/launcher/app/src/main/res/layout/activity_main.xml b/launcher/app/src/main/res/layout/activity_main.xml
+index 70c6de30..683b168e 100644
+--- a/launcher/app/src/main/res/layout/activity_main.xml
++++ b/launcher/app/src/main/res/layout/activity_main.xml
+@@ -266,21 +266,21 @@
+                             android:visibility="gone" />
+ 
+                         <TextClock
+-                            android:id="@+id/date"
+-                            android:gravity="left"
+-                            android:layout_width="match_parent"
+-                            android:layout_height="wrap_content"
+-                            android:singleLine="@bool/date_single_line"
+-                            android:maxLines="2"
+-                            android:lineSpacingExtra="6dp"
+-                            android:ellipsize="end"
+-                            android:format12Hour="@string/date_format_home"
+-                            android:format24Hour="@string/date_format_home"
+-                            android:textColor="#A6FFFFFF"
+-                            android:textSize="14sp"
+-                            android:fontFamily="@string/font_regular"
+-                            android:letterSpacing="0.14"
+-                            android:textAllCaps="true" />
++                        android:id="@+id/date"
++                        android:gravity="left"
++                        android:layout_width="match_parent"
++                        android:layout_height="wrap_content"
++                        android:singleLine="@bool/date_single_line"
++                        android:maxLines="2"
++                        android:lineSpacingExtra="6dp"
++                        android:ellipsize="end"
++                        android:format12Hour="@string/date_format_home"
++                        android:format24Hour="@string/date_format_home"
++                        android:textColor="#CCFFFFFF"
++                        android:textSize="22sp"
++                        android:fontFamily="@string/font_medium"
++                        android:letterSpacing="0.04"
++                        android:textAllCaps="true" />
+ 
+                         <!-- Lunar date ("Lunar 13/9 · Year of the Horse"), shown when lunar_date is on. -->
+                         <TextView
+@@ -300,6 +300,25 @@
+                     </LinearLayout>
+                 </LinearLayout>
+ 
++                <!-- Weather in the header's empty space (config.xml weather_line, off by default): the current
++                     temperature and conditions for one city, from Open-Meteo. It is a plain TextView with no
++                     focus and no click, so the grid and the dock keep every key they had. -->
++                <TextView
++                    android:id="@+id/weatherLine"
++                    android:gravity="left"
++                    android:layout_width="match_parent"
++                    android:layout_height="wrap_content"
++                    android:layout_marginStart="4dp"
++                    android:layout_marginTop="2dp"
++                    android:singleLine="true"
++                    android:ellipsize="end"
++                    android:textColor="#B3FFFFFF"
++                    android:textSize="15sp"
++                    android:fontFamily="@string/font_regular"
++                    android:letterSpacing="0.10"
++                    android:textAllCaps="true"
++                    android:visibility="gone" />
++
+             </LinearLayout>
+ 
+             <!-- Shown only when show_stats is on. Outside leftBlock, so the top buttons stay level with the clock
+diff --git a/launcher/app/src/main/res/values-iw/strings.xml b/launcher/app/src/main/res/values-iw/strings.xml
+index 6698661d..b9a74c09 100644
+--- a/launcher/app/src/main/res/values-iw/strings.xml
++++ b/launcher/app/src/main/res/values-iw/strings.xml
+@@ -149,4 +149,16 @@
+     <string name="race_countdown_days">%1$d ימ׳ %2$d שע׳</string>
+     <string name="last_opened">פתיחה אחרונה: %1$s</string>
+     <string name="game_live">בשידור חי עכשיו</string>
++    <!-- Weather line (weather_line): the conditions in the weather words. -->
++    <string name="w_clear">שמיים בהירים</string>
++    <string name="w_mainly_clear">בהיר ברובו</string>
++    <string name="w_partly_cloudy">מעונן חלקית</string>
++    <string name="w_overcast">מעונן</string>
++    <string name="w_fog">ערפל</string>
++    <string name="w_drizzle">טפטוף</string>
++    <string name="w_rain">גשם</string>
++    <string name="w_snow">שלג</string>
++    <string name="w_showers">סופות גשם</string>
++    <string name="w_thunder">סערת רעמים</string>
++    <string name="w_unknown">מזג אוויר</string>
+ </resources>
+diff --git a/launcher/app/src/main/res/values-th/strings.xml b/launcher/app/src/main/res/values-th/strings.xml
+index c0fec2c8..2f9c17aa 100644
+--- a/launcher/app/src/main/res/values-th/strings.xml
++++ b/launcher/app/src/main/res/values-th/strings.xml
+@@ -68,4 +68,19 @@
+     </plurals>
+     <string name="greeting_with_name">%1$s %2$s</string>
+     <string name="game_live">กำลังถ่ายทอดสด</string>
++    <!-- Weather line: "Saraburi · 28° · Overcast", %1$s is the city prefix (empty when weather_city_label is
++         empty), %2$d the temperature in whole degrees, %3$s the conditions. -->
++    <string name="weather_line_format" translatable="false">%1$s%2$d° · %3$s</string>
++    <!-- Weather line (weather_line): the conditions in the weather words. -->
++    <string name="w_clear">ท้องฟ้าแจ่มใส</string>
++    <string name="w_mainly_clear">แจ่มใส</string>
++    <string name="w_partly_cloudy">มีเมฆบางส่วน</string>
++    <string name="w_overcast">เมฆมาก</string>
++    <string name="w_fog">หมอก</string>
++    <string name="w_drizzle">ฝนปรอย</string>
++    <string name="w_rain">ฝนตก</string>
++    <string name="w_snow">หิมะ</string>
++    <string name="w_showers">ฝนตกเป็นแห่ง</string>
++    <string name="w_thunder">พายุฝนฟ้าคะนอง</string>
++    <string name="w_unknown">สภาพอากาศ</string>
+ </resources>
+diff --git a/launcher/app/src/main/res/values/config.xml b/launcher/app/src/main/res/values/config.xml
+index 14e30b9d..6d360ea4 100644
+--- a/launcher/app/src/main/res/values/config.xml
++++ b/launcher/app/src/main/res/values/config.xml
+@@ -512,4 +512,14 @@
+     <!-- Tiles drawn from the app's icon and name instead of its banner (for banners that crop badly). -->
+     <string-array name="icon_tiles" translatable="false">
+     </string-array>
++
++    <!-- Weather line in the header's empty space, under the clock (false: the line is gone and nothing is
++         read). The data is Open-Meteo, which needs no account and no key; the city is a latitude/longitude
++         pair, so no location permission is asked for. Fetched off the UI thread every 30 minutes and on each
++         return to Home; offline it keeps whatever it last showed. -->
++    <bool name="weather_line">true</bool>
++    <!-- The one city the weather line follows. Latitude, longitude, then the label shown with the reading. -->
++    <string name="weather_latitude" translatable="false">14.5333</string>
++    <string name="weather_longitude" translatable="false">100.9167</string>
++    <string name="weather_city_label">Saraburi</string>
+ </resources>
+diff --git a/launcher/app/src/main/res/values/strings.xml b/launcher/app/src/main/res/values/strings.xml
+index b340641b..68bc9b76 100644
+--- a/launcher/app/src/main/res/values/strings.xml
++++ b/launcher/app/src/main/res/values/strings.xml
+@@ -155,4 +155,19 @@
+     <string name="last_opened">Last opened %1$s</string>
+     <!-- game_day: a game on now, in the race panel. -->
+     <string name="game_live">Live now</string>
++    <!-- Weather line: "Saraburi · 28° · Overcast", %1$s is the city prefix (empty when weather_city_label is
++         empty), %2$d the temperature in whole degrees, %3$s the conditions. -->
++    <string name="weather_line_format" translatable="false">%1$s%2$d° · %3$s</string>
++    <!-- Weather line (weather_line): the conditions in the weather words. -->
++    <string name="w_clear">Clear</string>
++    <string name="w_mainly_clear">Mainly clear</string>
++    <string name="w_partly_cloudy">Partly cloudy</string>
++    <string name="w_overcast">Overcast</string>
++    <string name="w_fog">Fog</string>
++    <string name="w_drizzle">Drizzle</string>
++    <string name="w_rain">Rain</string>
++    <string name="w_snow">Snow</string>
++    <string name="w_showers">Showers</string>
++    <string name="w_thunder">Thunderstorm</string>
++    <string name="w_unknown">Weather</string>
+ </resources>
+diff --git a/patches/weather-line-saraburi.patch b/patches/weather-line-saraburi.patch
+new file mode 100644
+index 00000000..041bcb43
+--- /dev/null
++++ b/patches/weather-line-saraburi.patch
+@@ -0,0 +1,294 @@
++diff --git a/launcher/app/src/main/AndroidManifest.xml b/launcher/app/src/main/AndroidManifest.xml
++index 701b5fe..f3c9915 100644
++--- a/launcher/app/src/main/AndroidManifest.xml
+++++ b/launcher/app/src/main/AndroidManifest.xml
++@@ -9,6 +9,9 @@
++ 
++     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
++     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+++    <!-- The header's weather line (config.xml weather_line): Open-Meteo over HTTPS, which needs no account
+++         and no key. Nothing else in the launcher reaches the network. -->
+++    <uses-permission android:name="android.permission.INTERNET" />
++     <!-- Needed since Android 10 to read the Wi-Fi network name for the network pill. Never requested at
++          runtime: build-and-install grants it with pm grant, so lint's Android 12 "ask for COARSE with
++          FINE" rule does not apply here. -->
++diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
++index a5acd79..92b731a 100644
++--- a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
+++++ b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
++@@ -79,6 +79,12 @@ import androidx.recyclerview.widget.RecyclerView;
++ 
++ import java.io.File;
++ import java.io.IOException;
+++import java.io.BufferedReader;
+++import java.io.InputStreamReader;
+++import java.net.HttpURLConnection;
+++import java.net.URL;
+++import java.nio.charset.StandardCharsets;
+++import org.json.JSONObject;
++ import java.time.LocalDate;
++ import java.util.ArrayList;
++ import java.util.Arrays;
++@@ -110,6 +116,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
++     static int COLUMNS = 4;
++     private boolean rtlAppGrid;
++     private static final long MINUTE_MS = 60_000L;
+++    /** weather_line: how old the weather reading may be before Home asks for a new one. */
+++    private static final long WEATHER_INTERVAL_MS = 30 * MINUTE_MS;
++     private static final long STATS_MS = 10_000L;
++     /**
++      * 2025-01-01. TVs without a clock battery boot at the epoch (08:00 in China) and keep it until network
++@@ -189,6 +197,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
++     private TextView lunarDate;
++     private boolean lunar;
++     private int lunarOffset;
+++    /** config.xml weather_line: the header's weather line; off, it is gone and nothing is read. */
+++    private TextView weatherLine;
+++    /** config.xml weather_latitude / weather_longitude: the one city the weather line follows. */
+++    private String weatherLatitude = "", weatherLongitude = "";
+++    /** When the weather line was last fetched (SystemClock uptime), 0 until the first attempt. */
+++    private long lastWeatherFetch;
+++    /** A fetch thread is in flight, so a storm of resumes cannot start a second one. */
+++    private volatile boolean weatherFetching;
++     private TextView stats;
++     private List<RaceWeekend.Race> raceCalendar;
++     private View racePanel;
++@@ -372,6 +388,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
++         public void run() {
++             updateGreeting();
++             updateRace();
+++            updateWeather();
++             // The pill follows the network callbacks and each return to Home; only the diya's flame follows the
++             // signal level, so only it needs this minute's binder calls (about 7 ms on the UI thread).
++             if (festive) updateWifiLabel();
++@@ -510,6 +527,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
++             date.setPadding(0, (int) (4 * density), 0, 0);
++         }
++         vpnApp = cfg.vpnApp;
+++        if (getResources().getBoolean(R.bool.weather_line)) {
+++            weatherLine = findViewById(R.id.weatherLine);
+++            weatherLatitude = getString(R.string.weather_latitude);
+++            weatherLongitude = getString(R.string.weather_longitude);
+++        }
++         vpnPill = cfg.vpnPill && !cfg.topMenu;
++         btnVpn = findViewById(R.id.btnVpn);
++         moduleCards = cfg.moduleCards;
++@@ -971,6 +993,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
++         if (openLiveTvAfterBoot()) return;
++         updateGreeting();
++         updateRace();
+++        updateWeather();
++         // The network and Inputs pills keep their state while Home is in the background, and callbacks update them
++         // when the network or the inputs change, so this refresh only catches anything missed. Its binder calls
++         // (about 7 ms on a TCL C755, most of it WifiManager.getConnectionInfo) would hold up the first frame back
++@@ -2475,6 +2498,78 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
++         }
++     }
++ 
+++    /** The header's weather line (config.xml weather_line): the current temperature and conditions for one
+++     *  city, read from Open-Meteo, which needs no account and no key. The HTTP call leaves the UI thread;
+++     *  a failure keeps whatever the line already shows. At most one reading every WEATHER_INTERVAL_MS, so
+++     *  a minute tick cannot start a fetch, and a fetch in flight is never doubled. */
+++    private void updateWeather() {
+++        if (weatherLine == null || weatherFetching) return;
+++        long now = SystemClock.uptimeMillis();
+++        if (lastWeatherFetch != 0 && now - lastWeatherFetch < WEATHER_INTERVAL_MS) return;
+++        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+++        Network active = cm == null ? null : cm.getActiveNetwork();
+++        if (active == null || cm.getNetworkCapabilities(active) == null
+++                || !cm.getNetworkCapabilities(active).hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+++            return;
+++        }
+++        lastWeatherFetch = now;
+++        weatherFetching = true;
+++        new Thread(() -> {
+++            String text = null;
+++            try {
+++                String url = "https://api.open-meteo.com/v1/forecast?latitude=" + weatherLatitude
+++                        + "&longitude=" + weatherLongitude
+++                        + "&current=temperature_2m,weather_code&timezone=auto";
+++                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+++                c.setConnectTimeout(8000);
+++                c.setReadTimeout(8000);
+++                try {
+++                    StringBuilder body = new StringBuilder();
+++                    try (BufferedReader in = new BufferedReader(
+++                            new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
+++                        String line;
+++                        while ((line = in.readLine()) != null) body.append(line);
+++                    }
+++                    JSONObject current = new JSONObject(body.toString()).getJSONObject("current");
+++                    double temp = current.getDouble("temperature_2m");
+++                    int code = current.getInt("weather_code");
+++                    text = getString(R.string.weather_line_format,
+++                            Math.round(temp), weatherWord(code));
+++                } finally {
+++                    c.disconnect();
+++                }
+++            } catch (Exception ignored) {
+++                // Offline, an unreachable city or an API change: the line keeps what it had.
+++            } finally {
+++                weatherFetching = false;
+++            }
+++            if (text != null) {
+++                final String shown = text;
+++                handler.post(() -> {
+++                    weatherLine.setText(shown);
+++                    weatherLine.setVisibility(View.VISIBLE);
+++                });
+++            }
+++        }, "weather-line").start();
+++    }
+++
+++    /** A WMO weather code, which is what Open-Meteo's weather_code is, as words. */
+++    private String weatherWord(int code) {
+++        int res;
+++        if (code == 0) res = R.string.w_clear;
+++        else if (code == 1) res = R.string.w_mainly_clear;
+++        else if (code == 2) res = R.string.w_partly_cloudy;
+++        else if (code == 3) res = R.string.w_overcast;
+++        else if (code == 45 || code == 48) res = R.string.w_fog;
+++        else if (code >= 51 && code <= 57) res = R.string.w_drizzle;
+++        else if (code >= 61 && code <= 67) res = R.string.w_rain;
+++        else if (code >= 71 && code <= 77) res = R.string.w_snow;
+++        else if (code >= 80 && code <= 82) res = R.string.w_showers;
+++        else if (code >= 95) res = R.string.w_thunder;
+++        else res = R.string.w_unknown;
+++        return getString(res);
+++    }
+++
++     private void updateGreeting() {
++         int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
++         int res;
++diff --git a/launcher/app/src/main/res/layout/activity_main.xml b/launcher/app/src/main/res/layout/activity_main.xml
++index c037d24..890dcd6 100644
++--- a/launcher/app/src/main/res/layout/activity_main.xml
+++++ b/launcher/app/src/main/res/layout/activity_main.xml
++@@ -256,21 +256,21 @@
++                             android:visibility="gone" />
++ 
++                         <TextClock
++-                            android:id="@+id/date"
++-                            android:gravity="left"
++-                            android:layout_width="match_parent"
++-                            android:layout_height="wrap_content"
++-                            android:singleLine="@bool/date_single_line"
++-                            android:maxLines="2"
++-                            android:lineSpacingExtra="6dp"
++-                            android:ellipsize="end"
++-                            android:format12Hour="@string/date_format_home"
++-                            android:format24Hour="@string/date_format_home"
++-                            android:textColor="#A6FFFFFF"
++-                            android:textSize="14sp"
++-                            android:fontFamily="@string/font_regular"
++-                            android:letterSpacing="0.14"
++-                            android:textAllCaps="true" />
+++                        android:id="@+id/date"
+++                        android:gravity="left"
+++                        android:layout_width="match_parent"
+++                        android:layout_height="wrap_content"
+++                        android:singleLine="@bool/date_single_line"
+++                        android:maxLines="2"
+++                        android:lineSpacingExtra="6dp"
+++                        android:ellipsize="end"
+++                        android:format12Hour="@string/date_format_home"
+++                        android:format24Hour="@string/date_format_home"
+++                        android:textColor="#CCFFFFFF"
+++                        android:textSize="22sp"
+++                        android:fontFamily="@string/font_medium"
+++                        android:letterSpacing="0.04"
+++                        android:textAllCaps="true" />
++ 
++                         <!-- Lunar date ("Lunar 13/9 · Year of the Horse"), shown when lunar_date is on. -->
++                         <TextView
++@@ -290,6 +290,25 @@
++                     </LinearLayout>
++                 </LinearLayout>
++ 
+++                <!-- Weather in the header's empty space (config.xml weather_line, off by default): the current
+++                     temperature and conditions for one city, from Open-Meteo. It is a plain TextView with no
+++                     focus and no click, so the grid and the dock keep every key they had. -->
+++                <TextView
+++                    android:id="@+id/weatherLine"
+++                    android:gravity="left"
+++                    android:layout_width="match_parent"
+++                    android:layout_height="wrap_content"
+++                    android:layout_marginStart="4dp"
+++                    android:layout_marginTop="2dp"
+++                    android:singleLine="true"
+++                    android:ellipsize="end"
+++                    android:textColor="#B3FFFFFF"
+++                    android:textSize="15sp"
+++                    android:fontFamily="@string/font_regular"
+++                    android:letterSpacing="0.10"
+++                    android:textAllCaps="true"
+++                    android:visibility="gone" />
+++
++             </LinearLayout>
++ 
++             <!-- Shown only when show_stats is on. Outside leftBlock, so the top buttons stay level with the clock
++diff --git a/launcher/app/src/main/res/values-th/strings.xml b/launcher/app/src/main/res/values-th/strings.xml
++index 3cb7930..547b242 100644
++--- a/launcher/app/src/main/res/values-th/strings.xml
+++++ b/launcher/app/src/main/res/values-th/strings.xml
++@@ -66,4 +66,18 @@
++         <item quantity="other">%1$d แอป</item>
++     </plurals>
++     <string name="greeting_with_name">%1$s %2$s</string>
+++    <!-- Weather line: "28° · Overcast", the temperature in whole degrees, then the conditions. -->
+++    <string name="weather_line_format" translatable="false">%1$d° · %2$s</string>
+++    <!-- Weather line (weather_line): the conditions in the weather words. -->
+++    <string name="w_clear">ท้องฟ้าแจ่มใส</string>
+++    <string name="w_mainly_clear">แจ่มใส</string>
+++    <string name="w_partly_cloudy">มีเมฆบางส่วน</string>
+++    <string name="w_overcast">เมฆมาก</string>
+++    <string name="w_fog">หมอก</string>
+++    <string name="w_drizzle">ฝนปรอย</string>
+++    <string name="w_rain">ฝนตก</string>
+++    <string name="w_snow">หิมะ</string>
+++    <string name="w_showers">ฝนตกเป็นแห่ง</string>
+++    <string name="w_thunder">พายุฝนฟ้าคะนอง</string>
+++    <string name="w_unknown">สภาพอากาศ</string>
++ </resources>
++diff --git a/launcher/app/src/main/res/values/config.xml b/launcher/app/src/main/res/values/config.xml
++index a998742..7b40ef8 100644
++--- a/launcher/app/src/main/res/values/config.xml
+++++ b/launcher/app/src/main/res/values/config.xml
++@@ -468,4 +468,14 @@
++          faint outer glow), rim (the crisp rim alone, no sheen, fill or glow, for a quiet focus over a wallpaper) or
++          halo (the rim with a lighter outer glow). Can also be set with "glass_style": "rim" in a theme's config.json. -->
++     <string name="glass_style" translatable="false">glass</string>
+++
+++    <!-- Weather line in the header's empty space, under the clock (false: the line is gone and nothing is
+++         read). The data is Open-Meteo, which needs no account and no key; the city is a latitude/longitude
+++         pair, so no location permission is asked for. Fetched off the UI thread every 30 minutes and on each
+++         return to Home; offline it keeps whatever it last showed. -->
+++    <bool name="weather_line">true</bool>
+++    <!-- The one city the weather line follows. Latitude, longitude, then the label shown with the reading. -->
+++    <string name="weather_latitude" translatable="false">14.5333</string>
+++    <string name="weather_longitude" translatable="false">100.9167</string>
+++    <string name="weather_city_label">Saraburi</string>
++ </resources>
++diff --git a/launcher/app/src/main/res/values/strings.xml b/launcher/app/src/main/res/values/strings.xml
++index 635bced..19e3feb 100644
++--- a/launcher/app/src/main/res/values/strings.xml
+++++ b/launcher/app/src/main/res/values/strings.xml
++@@ -151,4 +151,18 @@
++     <!-- Cinematic top shelf (cinematic_home): the line under the focused dock app's name; %1$s is when it was
++          last opened, e.g. "5 minutes ago" or "yesterday, 9:40 pm". -->
++     <string name="last_opened">Last opened %1$s</string>
+++    <!-- Weather line: "28° · Overcast", the temperature in whole degrees, then the conditions. -->
+++    <string name="weather_line_format" translatable="false">%1$d° · %2$s</string>
+++    <!-- Weather line (weather_line): the conditions in the weather words. -->
+++    <string name="w_clear">Clear</string>
+++    <string name="w_mainly_clear">Mainly clear</string>
+++    <string name="w_partly_cloudy">Partly cloudy</string>
+++    <string name="w_overcast">Overcast</string>
+++    <string name="w_fog">Fog</string>
+++    <string name="w_drizzle">Drizzle</string>
+++    <string name="w_rain">Rain</string>
+++    <string name="w_snow">Snow</string>
+++    <string name="w_showers">Showers</string>
+++    <string name="w_thunder">Thunderstorm</string>
+++    <string name="w_unknown">Weather</string>
++ </resources>
+diff --git a/themes/README.md b/themes/README.md
+index 8bed449e..f8a7ee80 100644
+--- a/themes/README.md
++++ b/themes/README.md
+@@ -122,6 +122,10 @@ A new key needs one there in the same pull request.
+ | `seasonal_skin` | string | Names a festive skin like `festival` (`halloween`), read only when `festival` is empty or missing. Launchers that predate it ignore the key, so a theme that sets it shows the rest of its look there without the wrong skin; `festival_until`, `greeting` and `accent_color` apply to it as to `festival` |
+ | `festival_until` | `YYYY-MM-DD` | Last day the festive skin shows; it switches itself off after that. A malformed date turns it off |
+ | `greeting` | string | Replaces the time-of-day greeting while the festive skin is on |
++| `weather_line` | bool, `config.xml` only | The weather line under the clock ("SARABURI · 26° · OVERCAST"): the current temperature and conditions for one city from Open-Meteo, fetched off the UI thread every 30 minutes and on each return to Home; offline it keeps its last reading (`true` in this build) |
++| `weather_latitude` | number, `config.xml` only | The city's latitude for `weather_line`, e.g. `14.5333` (Saraburi); no location permission is asked for |
++| `weather_longitude` | number, `config.xml` only | The city's longitude for `weather_line`, e.g. `100.9167` (Saraburi) |
++| `weather_city_label` | string, `config.xml` only | The city's name shown with the reading in `weather_line`, e.g. `Saraburi` |
+ | `accent_color` | `#RRGGBB` | Colour of the focus glow while the festive skin is on; diya gold if not set, pumpkin orange for `halloween` |
+ | `settings_key_keycodes` | list of keycodes | Remote buttons that open Settings, for `HomeKeyService` (TCL Google TV gear: `[83]`) |
+ | `settings_key_panel` | bool | Those buttons open a small quick settings panel (TV settings, Display, Network, Apps, Launcher settings) instead of the TV's Settings |

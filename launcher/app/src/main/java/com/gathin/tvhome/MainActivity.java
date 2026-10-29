@@ -2742,8 +2742,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (lastWeatherFetch != 0 && now - lastWeatherFetch < WEATHER_INTERVAL_MS) return;
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         Network active = cm == null ? null : cm.getActiveNetwork();
-        if (active == null || cm.getNetworkCapabilities(active) == null
-                || !cm.getNetworkCapabilities(active).hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+        // Read the capabilities once: the network can change between two lookups, and the second
+        // one returning null would crash the UI thread here.
+        NetworkCapabilities caps = active == null ? null : cm.getNetworkCapabilities(active);
+        if (caps == null || !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
             return;
         }
         lastWeatherFetch = now;
@@ -2762,7 +2764,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     try (BufferedReader in = new BufferedReader(
                             new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
                         String line;
-                        while ((line = in.readLine()) != null) body.append(line);
+                        while ((line = in.readLine()) != null) {
+                            body.append(line);
+                            // The API answers in a few hundred bytes; a body past 64 KB is not the
+                            // forecast (read timeouts do not cap how much a slow stream delivers).
+                            if (body.length() > 65536) throw new IOException("weather response too large");
+                        }
                     }
                     JSONObject current = new JSONObject(body.toString()).getJSONObject("current");
                     double temp = current.getDouble("temperature_2m");
