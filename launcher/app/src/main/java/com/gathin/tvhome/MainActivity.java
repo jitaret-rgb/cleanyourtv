@@ -2763,11 +2763,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     StringBuilder body = new StringBuilder();
                     try (BufferedReader in = new BufferedReader(
                             new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
-                        String line;
-                        while ((line = in.readLine()) != null) {
-                            body.append(line);
-                            // The API answers in a few hundred bytes; a body past 64 KB is not the
-                            // forecast (read timeouts do not cap how much a slow stream delivers).
+                        // Read in bounded chunks, not readLine(): a stream with no newline would let
+                        // readLine() allocate without limit before this loop could ever see it. The API
+                        // answers in a few hundred bytes; a body past 64 KB is not the forecast.
+                        char[] chunk = new char[4096];
+                        int got;
+                        while ((got = in.read(chunk)) != -1) {
+                            body.append(chunk, 0, got);
                             if (body.length() > 65536) throw new IOException("weather response too large");
                         }
                     }
