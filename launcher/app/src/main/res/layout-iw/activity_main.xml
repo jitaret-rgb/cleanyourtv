@@ -312,6 +312,25 @@
                     </LinearLayout>
 
                 </LinearLayout>
+
+                <!-- Weather in the header's empty space (config.xml weather_line, off by default): the current
+                     temperature and conditions for one city, from Open-Meteo. It is a plain TextView with no
+                     focus and no click, so the grid and the dock keep every key they had. Mirrored: right. -->
+                <TextView
+                    android:id="@+id/weatherLine"
+                    android:gravity="right"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="4dp"
+                    android:layout_marginTop="2dp"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:textColor="#B3FFFFFF"
+                    android:textSize="15sp"
+                    android:fontFamily="@string/font_regular"
+                    android:letterSpacing="0.10"
+                    android:textAllCaps="true"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- Shown only when show_stats is on. Outside leftBlock, so the top buttons stay level with the clock

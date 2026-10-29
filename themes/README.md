@@ -151,6 +151,10 @@ A new key needs one there in the same pull request.
 | `seasonal_skin` | string | Names a festive skin like `festival` (`halloween`), read only when `festival` is empty or missing. Launchers that predate it ignore the key, so a theme that sets it shows the rest of its look there without the wrong skin; `festival_until`, `greeting` and `accent_color` apply to it as to `festival` |
 | `festival_until` | `YYYY-MM-DD` | Last day the festive skin shows; it switches itself off after that. A malformed date turns it off |
 | `greeting` | string | Replaces the time-of-day greeting while the festive skin is on |
+| `weather_line` | bool, `config.xml` only | The weather line under the clock ("SARABURI · 26° · OVERCAST"): the current temperature and conditions for one city from Open-Meteo, fetched off the UI thread every 30 minutes and on each return to Home; offline it keeps its last reading (`true` in this build) |
+| `weather_latitude` | number, `config.xml` only | The city's latitude for `weather_line`, e.g. `14.5333` (Saraburi); no location permission is asked for |
+| `weather_longitude` | number, `config.xml` only | The city's longitude for `weather_line`, e.g. `100.9167` (Saraburi) |
+| `weather_city_label` | string, `config.xml` only | The city's name shown with the reading in `weather_line`, e.g. `Saraburi` |
 | `accent_color` | `#RRGGBB` | Colour of the focus glow while the festive skin is on; diya gold if not set, pumpkin orange for `halloween` |
 | `settings_key_scancodes` | list, `config.xml` only | The same buttons by Linux scancode, for `HomeKeyService` (`HOME_KEY_SERVICE=1`); the Xiaomi/Fengmi projector remote's gear is scan 384. `Config.java` reads `settings_key_keycodes` out of a theme but never this one, so a `config.json` that sets it is dropped - it belongs in `config.xml` before the build. Find a code with `tools/tv.py 'getevent -lt'` |
 | `settings_key_keycodes` | list of keycodes | Remote buttons that open Settings, for `HomeKeyService` (TCL Google TV gear: `[83]`) |

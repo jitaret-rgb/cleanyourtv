@@ -152,4 +152,16 @@
     <string name="clock_format_system">מערכת</string>
     <string name="clock_format_12">12 שעות</string>
     <string name="clock_format_24">24 שעות</string>
+    <!-- Weather line (weather_line): the conditions in the weather words. -->
+    <string name="w_clear">שמיים בהירים</string>
+    <string name="w_mainly_clear">בהיר ברובו</string>
+    <string name="w_partly_cloudy">מעונן חלקית</string>
+    <string name="w_overcast">מעונן</string>
+    <string name="w_fog">ערפל</string>
+    <string name="w_drizzle">טפטוף</string>
+    <string name="w_rain">גשם</string>
+    <string name="w_snow">שלג</string>
+    <string name="w_showers">סופות גשם</string>
+    <string name="w_thunder">סערת רעמים</string>
+    <string name="w_unknown">מזג אוויר</string>
 </resources>
