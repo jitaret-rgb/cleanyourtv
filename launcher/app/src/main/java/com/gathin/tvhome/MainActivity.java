@@ -77,6 +77,7 @@ import androidx.dynamicanimation.animation.SpringForce;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import android.util.Log;
 import java.io.File;
 import java.io.IOException;
 import java.io.BufferedReader;
@@ -2746,10 +2747,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // one returning null would crash the UI thread here.
         NetworkCapabilities caps = active == null ? null : cm.getNetworkCapabilities(active);
         if (caps == null || !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+            Log.i("WeatherLine", "no network: active=" + active + " caps=" + caps);
             return;
         }
         lastWeatherFetch = now;
         weatherFetching = true;
+        Log.i("WeatherLine", "fetching: " + weatherLatitude + "," + weatherLongitude);
         new Thread(() -> {
             String text = null;
             try {
@@ -2783,13 +2786,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 } finally {
                     c.disconnect();
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
                 // Offline, an unreachable city or an API change: the line keeps what it had.
+                Log.i("WeatherLine", "fetch failed: " + e);
             } finally {
                 weatherFetching = false;
             }
             if (text != null) {
                 final String shown = text;
+                Log.i("WeatherLine", "ok: " + shown);
                 handler.post(() -> {
                     weatherLine.setText(shown);
                     weatherLine.setVisibility(View.VISIBLE);
