@@ -1,8 +1,8 @@
 diff --git a/docs/switches.md b/docs/switches.md
-index 31cf1dc1..d434abce 100644
+index 9ddd4ced..74b81187 100644
 --- a/docs/switches.md
 +++ b/docs/switches.md
-@@ -37,6 +37,10 @@ fits the rules; keys from before the rule sit on its wanted list until a screens
+@@ -40,6 +40,10 @@ rule sit on its wanted list until a screenshot arrives.
  | `wifi_status_warnings` | <img src="switches/wifi_status_warnings.jpg" width="320" alt="wifi_status_warnings on a TV"> |
  | `top_bar_apps` | <img src="switches/top_bar_apps.jpg" width="320" alt="top_bar_apps on a TV"> |
  | `show_greeting` | <img src="switches/show_greeting.jpg" width="320" alt="show_greeting on a TV"> |
@@ -3293,7 +3293,7 @@ literal 0
 HcmV?d00001
 
 diff --git a/launcher/app/src/main/AndroidManifest.xml b/launcher/app/src/main/AndroidManifest.xml
-index b336792d..9bbae411 100644
+index ca18afa9..935d38d2 100644
 --- a/launcher/app/src/main/AndroidManifest.xml
 +++ b/launcher/app/src/main/AndroidManifest.xml
 @@ -9,6 +9,9 @@
@@ -3307,7 +3307,7 @@ index b336792d..9bbae411 100644
           runtime: build-and-install grants it with pm grant, so lint's Android 12 "ask for COARSE with
           FINE" rule does not apply here. -->
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
-index a68495fe..5dc91a3d 100644
+index eda36c89..e2ab39af 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
 @@ -79,6 +79,12 @@ import androidx.recyclerview.widget.RecyclerView;
@@ -3323,7 +3323,7 @@ index a68495fe..5dc91a3d 100644
  import java.time.LocalDate;
  import java.util.ArrayList;
  import java.util.Arrays;
-@@ -110,6 +116,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -112,6 +118,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      static int COLUMNS = 4;
      private boolean rtlAppGrid;
      private static final long MINUTE_MS = 60_000L;
@@ -3332,7 +3332,7 @@ index a68495fe..5dc91a3d 100644
      private static final long STATS_MS = 10_000L;
      /**
       * 2025-01-01. TVs without a clock battery boot at the epoch (08:00 in China) and keep it until network
-@@ -189,6 +197,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -195,6 +203,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      private TextView lunarDate;
      private boolean lunar;
      private int lunarOffset;
@@ -3347,7 +3347,7 @@ index a68495fe..5dc91a3d 100644
      private TextView stats;
      private List<RaceWeekend.Race> raceCalendar;
      private View racePanel;
-@@ -412,6 +428,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -432,6 +448,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          public void run() {
              updateGreeting();
              updatePanel();
@@ -3355,7 +3355,7 @@ index a68495fe..5dc91a3d 100644
              // The pill follows the network callbacks and each return to Home; only the festive light follows the
              // signal level, so only it needs this minute's binder calls (about 7 ms on the UI thread).
              if (festive) updateWifiLabel();
-@@ -557,6 +574,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -595,6 +612,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
              date.setPadding(0, (int) (4 * density), 0, 0);
          }
          vpnApp = cfg.vpnApp;
@@ -3368,15 +3368,15 @@ index a68495fe..5dc91a3d 100644
          vpnPill = cfg.vpnPill && !cfg.topMenu;
          btnVpn = findViewById(R.id.btnVpn);
          moduleCards = cfg.moduleCards;
-@@ -1043,6 +1066,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
-         if (openLiveTvAfterBoot()) return;
-         updateGreeting();
-         updatePanel();
+@@ -1109,6 +1132,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         // Back from an app opened from its tile, focus is still on that tile, so the cinematic "Last opened" line kept
+         // the time from before this launch ("2 days ago" right after opening it). Refresh it.
+         if (cinematic && heroMeta != null && lastFocused >= 0 && lastFocused < adapter.appCount()) updateHeroMeta(lastFocused);
 +        updateWeather();
          // The network and Inputs pills keep their state while Home is in the background, and callbacks update them
          // when the network or the inputs change, so this refresh only catches anything missed. Its binder calls
          // (about 7 ms on a TCL C755, most of it WifiManager.getConnectionInfo) would hold up the first frame back
-@@ -2571,6 +2595,89 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -2708,6 +2732,89 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          }
      }
  
@@ -3564,13 +3564,13 @@ index 70c6de30..683b168e 100644
  
              <!-- Shown only when show_stats is on. Outside leftBlock, so the top buttons stay level with the clock
 diff --git a/launcher/app/src/main/res/values-iw/strings.xml b/launcher/app/src/main/res/values-iw/strings.xml
-index 6698661d..b9a74c09 100644
+index 24798616..8228e1ef 100644
 --- a/launcher/app/src/main/res/values-iw/strings.xml
 +++ b/launcher/app/src/main/res/values-iw/strings.xml
-@@ -149,4 +149,16 @@
-     <string name="race_countdown_days">%1$d ימ׳ %2$d שע׳</string>
-     <string name="last_opened">פתיחה אחרונה: %1$s</string>
-     <string name="game_live">בשידור חי עכשיו</string>
+@@ -152,4 +152,16 @@
+     <string name="clock_format_system">מערכת</string>
+     <string name="clock_format_12">12 שעות</string>
+     <string name="clock_format_24">24 שעות</string>
 +    <!-- Weather line (weather_line): the conditions in the weather words. -->
 +    <string name="w_clear">שמיים בהירים</string>
 +    <string name="w_mainly_clear">בהיר ברובו</string>
@@ -3585,13 +3585,13 @@ index 6698661d..b9a74c09 100644
 +    <string name="w_unknown">מזג אוויר</string>
  </resources>
 diff --git a/launcher/app/src/main/res/values-th/strings.xml b/launcher/app/src/main/res/values-th/strings.xml
-index c0fec2c8..2f9c17aa 100644
+index 8fda21b5..be3feda9 100644
 --- a/launcher/app/src/main/res/values-th/strings.xml
 +++ b/launcher/app/src/main/res/values-th/strings.xml
-@@ -68,4 +68,19 @@
-     </plurals>
-     <string name="greeting_with_name">%1$s %2$s</string>
-     <string name="game_live">กำลังถ่ายทอดสด</string>
+@@ -71,4 +71,19 @@
+     <string name="clock_format_system">ระบบ</string>
+     <string name="clock_format_12">12 ชั่วโมง</string>
+     <string name="clock_format_24">24 ชั่วโมง</string>
 +    <!-- Weather line: "Saraburi · 28° · Overcast", %1$s is the city prefix (empty when weather_city_label is
 +         empty), %2$d the temperature in whole degrees, %3$s the conditions. -->
 +    <string name="weather_line_format" translatable="false">%1$s%2$d° · %3$s</string>
@@ -3609,10 +3609,10 @@ index c0fec2c8..2f9c17aa 100644
 +    <string name="w_unknown">สภาพอากาศ</string>
  </resources>
 diff --git a/launcher/app/src/main/res/values/config.xml b/launcher/app/src/main/res/values/config.xml
-index 14e30b9d..6d360ea4 100644
+index cb0781de..cbf8e40d 100644
 --- a/launcher/app/src/main/res/values/config.xml
 +++ b/launcher/app/src/main/res/values/config.xml
-@@ -512,4 +512,14 @@
+@@ -534,4 +534,14 @@
      <!-- Tiles drawn from the app's icon and name instead of its banner (for banners that crop badly). -->
      <string-array name="icon_tiles" translatable="false">
      </string-array>
@@ -3628,13 +3628,13 @@ index 14e30b9d..6d360ea4 100644
 +    <string name="weather_city_label">Saraburi</string>
  </resources>
 diff --git a/launcher/app/src/main/res/values/strings.xml b/launcher/app/src/main/res/values/strings.xml
-index b340641b..68bc9b76 100644
+index 2b2b53eb..23171d97 100644
 --- a/launcher/app/src/main/res/values/strings.xml
 +++ b/launcher/app/src/main/res/values/strings.xml
-@@ -155,4 +155,19 @@
-     <string name="last_opened">Last opened %1$s</string>
-     <!-- game_day: a game on now, in the race panel. -->
-     <string name="game_live">Live now</string>
+@@ -158,4 +158,19 @@
+     <string name="clock_format_system">System</string>
+     <string name="clock_format_12">12-hour</string>
+     <string name="clock_format_24">24-hour</string>
 +    <!-- Weather line: "Saraburi · 28° · Overcast", %1$s is the city prefix (empty when weather_city_label is
 +         empty), %2$d the temperature in whole degrees, %3$s the conditions. -->
 +    <string name="weather_line_format" translatable="false">%1$s%2$d° · %3$s</string>
@@ -3652,10 +3652,10 @@ index b340641b..68bc9b76 100644
 +    <string name="w_unknown">Weather</string>
  </resources>
 diff --git a/themes/README.md b/themes/README.md
-index 8bed449e..f8a7ee80 100644
+index 7254511f..18f254d1 100644
 --- a/themes/README.md
 +++ b/themes/README.md
-@@ -122,6 +122,10 @@ A new key needs one there in the same pull request.
+@@ -151,6 +151,10 @@ A new key needs one there in the same pull request.
  | `seasonal_skin` | string | Names a festive skin like `festival` (`halloween`), read only when `festival` is empty or missing. Launchers that predate it ignore the key, so a theme that sets it shows the rest of its look there without the wrong skin; `festival_until`, `greeting` and `accent_color` apply to it as to `festival` |
  | `festival_until` | `YYYY-MM-DD` | Last day the festive skin shows; it switches itself off after that. A malformed date turns it off |
  | `greeting` | string | Replaces the time-of-day greeting while the festive skin is on |
@@ -3664,5 +3664,5 @@ index 8bed449e..f8a7ee80 100644
 +| `weather_longitude` | number, `config.xml` only | The city's longitude for `weather_line`, e.g. `100.9167` (Saraburi) |
 +| `weather_city_label` | string, `config.xml` only | The city's name shown with the reading in `weather_line`, e.g. `Saraburi` |
  | `accent_color` | `#RRGGBB` | Colour of the focus glow while the festive skin is on; diya gold if not set, pumpkin orange for `halloween` |
+ | `settings_key_scancodes` | list, `config.xml` only | The same buttons by Linux scancode, for `HomeKeyService` (`HOME_KEY_SERVICE=1`); the Xiaomi/Fengmi projector remote's gear is scan 384. `Config.java` reads `settings_key_keycodes` out of a theme but never this one, so a `config.json` that sets it is dropped - it belongs in `config.xml` before the build. Find a code with `tools/tv.py 'getevent -lt'` |
  | `settings_key_keycodes` | list of keycodes | Remote buttons that open Settings, for `HomeKeyService` (TCL Google TV gear: `[83]`) |
- | `settings_key_panel` | bool | Those buttons open a small quick settings panel (TV settings, Display, Network, Apps, Launcher settings) instead of the TV's Settings |
