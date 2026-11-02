@@ -3307,11 +3307,14 @@ index ca18afa9..935d38d2 100644
           runtime: build-and-install grants it with pm grant, so lint's Android 12 "ask for COARSE with
           FINE" rule does not apply here. -->
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
-index eda36c89..e2ab39af 100644
+index eda36c89..be776688 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
-@@ -79,6 +79,12 @@ import androidx.recyclerview.widget.RecyclerView;
+@@ -77,8 +77,15 @@ import androidx.dynamicanimation.animation.SpringForce;
+ import androidx.recyclerview.widget.GridLayoutManager;
+ import androidx.recyclerview.widget.RecyclerView;
  
++import android.util.Log;
  import java.io.File;
  import java.io.IOException;
 +import java.io.BufferedReader;
@@ -3323,7 +3326,7 @@ index eda36c89..e2ab39af 100644
  import java.time.LocalDate;
  import java.util.ArrayList;
  import java.util.Arrays;
-@@ -112,6 +118,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -112,6 +119,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      static int COLUMNS = 4;
      private boolean rtlAppGrid;
      private static final long MINUTE_MS = 60_000L;
@@ -3332,7 +3335,7 @@ index eda36c89..e2ab39af 100644
      private static final long STATS_MS = 10_000L;
      /**
       * 2025-01-01. TVs without a clock battery boot at the epoch (08:00 in China) and keep it until network
-@@ -195,6 +203,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -195,6 +204,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      private TextView lunarDate;
      private boolean lunar;
      private int lunarOffset;
@@ -3347,7 +3350,7 @@ index eda36c89..e2ab39af 100644
      private TextView stats;
      private List<RaceWeekend.Race> raceCalendar;
      private View racePanel;
-@@ -432,6 +448,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -432,6 +449,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          public void run() {
              updateGreeting();
              updatePanel();
@@ -3355,7 +3358,7 @@ index eda36c89..e2ab39af 100644
              // The pill follows the network callbacks and each return to Home; only the festive light follows the
              // signal level, so only it needs this minute's binder calls (about 7 ms on the UI thread).
              if (festive) updateWifiLabel();
-@@ -595,6 +612,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -595,6 +613,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
              date.setPadding(0, (int) (4 * density), 0, 0);
          }
          vpnApp = cfg.vpnApp;
@@ -3368,7 +3371,7 @@ index eda36c89..e2ab39af 100644
          vpnPill = cfg.vpnPill && !cfg.topMenu;
          btnVpn = findViewById(R.id.btnVpn);
          moduleCards = cfg.moduleCards;
-@@ -1109,6 +1132,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -1109,6 +1133,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          // Back from an app opened from its tile, focus is still on that tile, so the cinematic "Last opened" line kept
          // the time from before this launch ("2 days ago" right after opening it). Refresh it.
          if (cinematic && heroMeta != null && lastFocused >= 0 && lastFocused < adapter.appCount()) updateHeroMeta(lastFocused);
@@ -3376,7 +3379,7 @@ index eda36c89..e2ab39af 100644
          // The network and Inputs pills keep their state while Home is in the background, and callbacks update them
          // when the network or the inputs change, so this refresh only catches anything missed. Its binder calls
          // (about 7 ms on a TCL C755, most of it WifiManager.getConnectionInfo) would hold up the first frame back
-@@ -2708,6 +2732,89 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -2708,6 +2733,93 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          }
      }
  
@@ -3394,10 +3397,12 @@ index eda36c89..e2ab39af 100644
 +        // one returning null would crash the UI thread here.
 +        NetworkCapabilities caps = active == null ? null : cm.getNetworkCapabilities(active);
 +        if (caps == null || !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
++            Log.i("WeatherLine", "no network: active=" + active + " caps=" + caps);
 +            return;
 +        }
 +        lastWeatherFetch = now;
 +        weatherFetching = true;
++        Log.i("WeatherLine", "fetching: " + weatherLatitude + "," + weatherLongitude);
 +        new Thread(() -> {
 +            String text = null;
 +            try {
@@ -3431,13 +3436,15 @@ index eda36c89..e2ab39af 100644
 +                } finally {
 +                    c.disconnect();
 +                }
-+            } catch (Exception ignored) {
++            } catch (Exception e) {
 +                // Offline, an unreachable city or an API change: the line keeps what it had.
++                Log.i("WeatherLine", "fetch failed: " + e);
 +            } finally {
 +                weatherFetching = false;
 +            }
 +            if (text != null) {
 +                final String shown = text;
++                Log.i("WeatherLine", "ok: " + shown);
 +                handler.post(() -> {
 +                    weatherLine.setText(shown);
 +                    weatherLine.setVisibility(View.VISIBLE);
