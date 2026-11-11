@@ -1,0 +1,21 @@
+Knowledge consultation (no device access needed — reasoning only; do NOT try to run adb or touch files; read-only, at most 2 commands if any, answer directly under ~500 words).
+
+Context — Android TV head unit (NWD K2401, Android 9/API28, 2GB RAM, Wi-Fi only, NO SIM/mobile data, vendor app "nwd-timekeeper" already fixes boot clock so time is now correct):
+- Play Store keeps losing login ("reenter credentials"): stored Google auth tokens get wiped from accounts_ce.db (18 -> 2), googleplay scope gone, BAD_AUTHENTICATION storms (thousands/5min) whenever the device wakes while it has NO internet.
+- Pattern proven from logs: (a) power-cut boots with 1970 clock killed tokens (clock now fixed, this cause removed); (b) car parked AWAY from home Wi-Fi (no internet for hours) -> Finsky "User needs to (re)enter credentials" -> GMS wipes tokens overnight; after re-login with internet it stays clean while internet is available; (c) on wake right after Wi-Fi returns, a short BAD_AUTH storm fires then stops.
+- Account jitaret@gmail.com re-logged 30 Oct 06:22; device clean until it left home Wi-Fi range ~07:08; owner reports "still failing" while out (no internet).
+- Suspicion left: GMS internal state corruption (earlier seen: SQLiteException "no such table: account_data" on wake + DroidGuard restarts) — an account reauth-scope token ("oauth2:.../accounts.reauth") also exists in the DB.
+
+My fix list (critique + complete it):
+A. Give it internet when away: phone hotspot (makes Play usable + lets GMS refresh tokens) — only real fix for "usable outside home".
+B. pm clear com.google.android.gms + re-login once (reset accumulated GMS state corruption) — heavy, planned.
+C. Remove + re-add the Google account (lighter than B).
+D. wifi_sleep_policy=0 already applied (Wi-Fi stays up during standby at home).
+E. Battery-optimization/doze exemption for GMS on Android TV so auth refresh isn't throttled while parked.
+F. Keep time correct (done via vendor timekeeper).
+G. Investigate why accounts.reauth scope token exists (Google flagging device/account for periodic re-auth?).
+
+Answer with three sections:
+V1 — Mechanisms that wipe stored Google auth tokens on Android: rank which fit this evidence (offline refresh failure -> invalidation? GoogleAuthUtil clearing on BAD_AUTHENTICATION? account_data DB corruption? GMS periodic token expiry while offline? reauth policy?). One line each.
+V2 — For each of A..G: ROOT FIX / MITIGATION / RED HERRING / UNTESTABLE, one line each.
+V3 — Missing fixes I did not list (Android TV-specific: e.g. TV's "sign-in" quirks, vending vs gms interplay, autofill of token caching, Play Store's own account handling), one line each, max 5 items.

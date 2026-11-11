@@ -1,0 +1,4 @@
+Third pass, narrow: verify two re-fixes in /home/nenglab/cleanyourtv. READ-ONLY, at most 4 read-only commands, answer directly under ~150 words. Verdict per claim: CONFIRMED FIXED / STILL BROKEN / UNPROVEN + one line.
+
+F2r — "MainActivity.java updateWeather() now reads the Open-Meteo response with a bounded chunk loop (char[4096], in.read(chunk), body.length()>65536 throws) instead of readLine(), so neither an unterminated line nor any stream can grow memory past ~68 KB."
+F3r — "patches/weather-line-saraburi.patch was regenerated after untracking artifacts/: grep for updateRace and for 'diff --git a/artifacts' in it now returns 0 matches, and it contains exactly 11 file hunks."

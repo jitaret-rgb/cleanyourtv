@@ -1,0 +1,7 @@
+Second pass: verify three fixes applied after your review of the weather-line customization in /home/nenglab/cleanyourtv (branch weather-line, based on upstream v3.2.0). READ-ONLY: do not modify files; at most 6 read-only commands (grep/sed -n/git show/diff). Answer directly, under ~250 words.
+
+Each claim below: verdict CONFIRMED FIXED / STILL BROKEN / UNPROVEN + one line. Then one final line: "NO NEW SYNTAX/LOGIC ERROR" or list new errors you found in the edits.
+
+F1 — "In MainActivity.java updateWeather(), the NetworkCapabilities are now read ONCE into a local `caps` variable (no double getNetworkCapabilities call), so the second-call-null NPE race is gone. Call sites are ~line 2606-2612."
+F2 — "The Open-Meteo response body read is now capped: the read loop throws IOException once body.length() exceeds 65536, so a pathological stream can no longer grow memory without bound."
+F3 — "patches/weather-line-saraburi.patch was regenerated from the rebased tree (git diff v3.2.0..HEAD --binary, excluding the patch file itself): it no longer contains updateRace hunks and applies cleanly to a pristine v3.2.0 tree (verified by us with git apply --check). Confirm it contains no updateRace() call-site lines and no self-referential hunk for the patch file itself."

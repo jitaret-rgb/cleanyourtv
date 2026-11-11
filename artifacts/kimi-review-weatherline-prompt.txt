@@ -1,0 +1,34 @@
+You are reviewing a LOCAL customization of an open-source Android TV launcher (CleanYourTV) that was just rebased from upstream v3.1.0 onto the new upstream tag v3.2.0, then built and installed on a real TV (install succeeded, feature verified working on screen).
+
+READ-ONLY review: do not modify any file, do not run system-changing commands. You may run read-only shell (git diff/log/show, grep, sed -n, ls) inside /home/nenglab/cleanyourtv — at most 8 read-only commands total.
+
+Context:
+- Repo: /home/nenglab/cleanyourtv (branch weather-line, based on upstream tag v3.2.0)
+- Full local diff vs the new base: artifacts/weather-line-v320.diff (read this file first)
+- The local feature: a "weather line" under the TV's clock showing "SARABURI · 26° · <condition>", fed by Open-Meteo over HTTPS (INTERNET permission added), enabled via config.xml key weather_line=true, city via weather_latitude/weather_longitude/weather_city_label.
+- Rebase conflicts were resolved by hand in 4 places: MainActivity.java x2 (upstream renamed updateRace() -> updatePanel(); we kept upstream's updatePanel() and added our updateWeather() call right after it), strings.xml x2 (kept both upstream's new game_live string and our weather strings).
+
+Intentional local changes (do NOT report these as "upstream clobbered" — they ARE the customization):
+1. AndroidManifest.xml: added INTERNET permission (weather fetch).
+2. MainActivity.java: +imports, +updateWeather() method, +2 call sites (minuteTick, first-frame refresh after openLiveTvAfterBoot).
+3. layout/activity_main.xml: +weatherLine TextView (gone by default unless config on).
+4. config.xml: weather_line/weather_latitude/weather_longitude/weather_city_label defaults (Saraburi 14.5333/100.9167).
+5. values/strings.xml + values-th/strings.xml: weather_line_format + 11 w_* condition strings (th localized).
+6. themes/README.md + docs/switches.md: 4 Keys-table rows + 4 screenshot rows (same JPG for all 4 keys) — added to satisfy v3.2.0's new tests.
+7. values-iw/strings.xml + layout-iw/activity_main.xml: Hebrew weather strings + mirrored weatherLine view — same reason.
+8. patches/weather-line-saraburi.patch: the original pre-rebase patch (now STALE vs the rebased commits).
+
+Verdict questions (answer ALL, max 4):
+V1 [rebase correctness] In MainActivity.java, are the two call-site hunks correct — is updateWeather() called at the right moments without dropping or double-calling anything upstream v3.2.0 expects (compare against upstream's updatePanel() call sites with git show v3.2.0:launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java)? Any missed conflict region (search for leftover markers or a dropped upstream line)?
+V2 [threading/robustness] In the updateWeather() implementation, is the network fetch genuinely off the UI thread, is the JSONObject/URL handling leak- or crash-prone (null response, non-200, HTTP not HTTPS, malformed JSON, interrupted activity), and is there any ANR or crash path on a 2GB Android 9 TV?
+V3 [rebase residue] Is patches/weather-line-saraburi.patch now stale/misleading (does it still apply to the new tree)? Should it be regenerated or removed?
+V4 [test-gaming] The 4 new Keys/screenshot rows reuse ONE screenshot for 4 keys, and Hebrew strings were machine-added — do these satisfy or game v3.2.0's tests (tests/test_switches.py, tests/test_theme_keys_config.py, tests/test_hebrew_resources.py)? Anything still inconsistent (e.g. a key documented but never readable, or vice versa)?
+
+Output shape (write the answer directly, no file):
+VERDICTS
+V1: PASS/FAIL + one-line reason, file:line for any finding
+V2: PASS/FAIL + one-line reason, file:line
+V3: PASS/FAIL + one-line reason
+V4: PASS/FAIL + one-line reason
+Then: FINDINGS ranked by severity, each as [severity] why file:line (severity = high/med/low/nit). If a verdict found nothing, write "no issue found".
+Budget: max 8 read-only commands, answer under ~450 words total.
