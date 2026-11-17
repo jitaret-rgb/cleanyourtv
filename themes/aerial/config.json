@@ -3,7 +3,7 @@
   "wallpaper": true,
   "wallpaper_rotation_minutes": 15,
   "wallpaper_order": "shuffle",
-  "wallpaper_captions": true,
+  "wallpaper_captions": false,
   "rows_below_dock": 0,
   "dock_title": true,
   "dock_glass": true,

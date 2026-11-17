@@ -3,7 +3,7 @@
   "wallpaper": true,
   "wallpaper_rotation_minutes": 20,
   "wallpaper_order": "sequential",
-  "wallpaper_captions": true,
+  "wallpaper_captions": false,
   "wallpaper_moods": {
     "morning": [
       "01-gryning.jpg",
