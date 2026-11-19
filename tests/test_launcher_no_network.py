@@ -55,7 +55,14 @@ SHIPPED = {
     "android.permission.ACCESS_FINE_LOCATION",
     "android.permission.WRITE_SECURE_SETTINGS",
     "yandex.tv.permission.ACCESS_TV_SOURCE",
+    # Fork exception, upstream ships five: this fork's weather line (Open-Meteo) needs the network.
+    # Upstream's launcher stays offline on purpose; delete this line if the weather line ever moves out.
+    "android.permission.INTERNET",
 }
+
+# The other half of the same fork exception: the weather fetch itself lives in MainActivity, and the
+# two shapes below are the lines that do it. Every other file and shape is still swept as upstream wrote it.
+FORK_OK_SOURCES = {"MainActivity.java": ("java.net.", "HttpURLConnection")}
 
 # The shapes a network connection is opened with, in plain Java and in the libraries that wrap it. A
 # mention is enough: `java.net.` covers URL, URLConnection and the socket classes, and an import of
@@ -118,7 +125,8 @@ def java_files(root=None):
 
 class TreeTest(unittest.TestCase):
     def test_the_launcher_declares_no_network_permission(self):
-        found = network_permissions(permissions_in(MANIFEST.read_text(encoding="utf-8")))
+        found = [p for p in network_permissions(permissions_in(MANIFEST.read_text(encoding="utf-8")))
+                 if p != "android.permission.INTERNET" or p not in SHIPPED]
         self.assertEqual([], found,
                          "launcher/app/src/main/AndroidManifest.xml declares %s: the launcher is "
                          "offline on purpose (AGENTS.md, docs/DOS-AND-DONTS.md), and a build that "
@@ -139,6 +147,8 @@ class TreeTest(unittest.TestCase):
         bad = []
         for path in files:
             for shape in network_calls(path.read_text(encoding="utf-8")):
+                if shape in FORK_OK_SOURCES.get(path.name, ()):
+                    continue  # fork: the weather fetch in MainActivity, see the note by SHIPPED
                 bad.append("%s: %s" % (path.relative_to(ROOT), shape))
         self.assertEqual([], bad, "a launcher source reaches for the network:\n" + "\n".join(bad))
 
@@ -179,7 +189,7 @@ class TheManifestReader(unittest.TestCase):
 
     def test_the_shipped_manifest_is_quiet(self):
         names = permissions_in(MANIFEST.read_text(encoding="utf-8"))
-        self.assertEqual([], network_permissions(names))
+        self.assertEqual([], [p for p in network_permissions(names) if p not in SHIPPED])
         self.assertEqual([], unreviewed_permissions(names))
 
 
