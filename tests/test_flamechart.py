@@ -9,6 +9,7 @@ neither Perfetto's query engine nor a TV. Drawing needs Pillow, so that test ski
 Run from the repository root: python3 -m unittest discover -s tests -v
 """
 import contextlib
+import errno
 import importlib.util
 import io
 import os
@@ -21,7 +22,8 @@ import unittest
 import warnings
 from unittest import mock
 
-from tests.test_trace_report import first_frame_trace
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_trace_report import first_frame_trace  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -224,6 +226,27 @@ class ArgumentTest(unittest.TestCase):
             self.assertIn("is a file, not a folder", self.parse_error(["a", "--out", str(through / "chart.png")]))
             self.assertIn("--out is empty", self.parse_error(["a", "--out", ""]))
 
+    def test_a_folder_the_filesystem_will_not_look_at_is_named_with_its_reason(self):
+        # os.path.exists() and os.path.isdir() answer every OSError with False, so a folder under one this
+        # user may not traverse (EACCES) and a name longer than NAME_MAX both read as "not there yet", and
+        # the reader was told to create a folder that is either already there or that nothing can create.
+        with tempfile.TemporaryDirectory() as tmp:
+            long_folder = Path(tmp) / ("a" * 300)
+            try:
+                os.stat(long_folder)
+            except OSError:
+                message = self.parse_error(["a", "--out", str(long_folder / "chart.png")])
+                self.assertIn("cannot be looked at", message)
+                self.assertNotIn("create it first", message)
+            else:
+                self.skipTest("this filesystem stats a 300-character name")
+        for number in (errno.ENAMETOOLONG, errno.EACCES, errno.EIO):
+            with self.subTest(errno=number), \
+                    mock.patch("os.stat", side_effect=OSError(number, os.strerror(number))):
+                message = self.parse_error(["a", "--out", "/tmp/charts/chart.png"])
+                self.assertIn("cannot be looked at", message)
+                self.assertIn(os.strerror(number), message)
+
     def test_a_png_in_a_folder_that_is_there_is_still_accepted(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = os.path.join(tmp, "chart.png")
@@ -301,8 +324,30 @@ class WriteFailureTest(unittest.TestCase):
         self.assertEqual("", output.getvalue())
         stray = [l for l in error.getvalue().splitlines() if "ResourceWarning" not in l and not l.startswith("  ")]
         self.assertEqual([], stray)   # a GC ResourceWarning from another test may land here; nothing else may
-        image.save.assert_called_once_with(str(out))
+        image.save.assert_called_once()
+        self.assertNotEqual(str(out), image.save.call_args.args[0])
         close.assert_called_once_with()
+
+    def test_a_failed_save_keeps_the_chart_already_there(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            trace = Path(tmp, "nav-1.pftrace")
+            trace.write_bytes(b"")
+            out = Path(tmp, "chart.png")
+            out.write_bytes(b"old chart")
+            pil, image = fake_pillow()
+
+            def truncate_then_fail(path, **options):
+                Path(path).write_bytes(b"half")
+                raise OSError(28, "No space left on device")
+            image.save.side_effect = truncate_then_fail
+            with mock.patch.dict(sys.modules, {"PIL": pil}), \
+                    mock.patch.object(flamechart.trace_report, "opener",
+                                      return_value=lambda path: (fake_trace(), mock.Mock())), \
+                    contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()), \
+                    self.assertRaises(SystemExit):
+                flamechart.main([str(trace), "--out", str(out)])
+            self.assertEqual(b"old chart", out.read_bytes())
 
     def test_a_font_load_failure_is_not_called_an_output_write_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -499,6 +544,37 @@ class InputPanelsTest(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec("PIL"), "drawing needs Pillow (tools/requirements-perf.txt)")
 class DrawTest(unittest.TestCase):
+    def test_main_reports_a_written_unicode_path_on_limited_and_utf8_consoles(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as tmp:
+            trace = Path(tmp, "cold-1.pftrace")
+            trace.write_bytes(b"")
+            out = Path(tmp, "chart_\u5199.png")
+            reference = None
+            for encoding in ("utf-8", "cp1252"):
+                with self.subTest(encoding=encoding):
+                    raw = io.BytesIO()
+                    console = io.TextIOWrapper(raw, encoding=encoding, newline="")
+                    open_trace = lambda path: (fake_trace(), lambda: None)
+                    try:
+                        with mock.patch.object(flamechart.trace_report, "opener", return_value=open_trace), \
+                                contextlib.redirect_stdout(console):
+                            self.assertIsNone(flamechart.main([str(trace), "--out", str(out)]))
+                    finally:
+                        console.flush()
+                        console.detach()
+                    with Image.open(out) as im:
+                        self.assertEqual(im.format, "PNG")
+                        self.assertEqual(im.width, 1600)
+                        size = im.size
+                        im.verify()
+                    shown = str(out).encode(encoding, "replace").decode(encoding)
+                    self.assertEqual(raw.getvalue().decode(encoding), f"{shown}: {size[0]}x{size[1]}\n")
+                    if reference is None:
+                        reference = out.read_bytes()
+                    else:
+                        self.assertEqual(out.read_bytes(), reference, "console encoding must not change the PNG")
+
     def test_draws_both_panels_on_one_scale_with_magenta(self):
         q = fake_trace()
         panel = lambda label, t1: {"label": label, "note": "", "t0": 1000 * MS, "t1": t1,
